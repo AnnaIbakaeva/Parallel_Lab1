@@ -11,7 +11,7 @@ int* fillSeries(int* series, int size)
 {
 	srand(time(NULL));
 	for (int i = 0; i < size; i++)
-		series[i] = rand() % 100;
+		series[i] = 1;
 	return series;
 }
 
@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
 		series = fillSeries(series, arraySize);
 		if (arraySize <= 100)
 		{
-			cout << "Series:/n";
+			cout << "Series:\n";
 			for (int i = 0; i < arraySize; i++)
 			{
 				cout << series[i] << " ";
@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
 			cout << "\n";
 		}
 	}
-	MPI_Bcast(series, arraySize, MPI_INT, 0, MPI_COMM_WORLD);
+	//MPI_Bcast(series, arraySize, MPI_INT, 0, MPI_COMM_WORLD);
 
 	MPI_Barrier(MPI_COMM_WORLD);
 
@@ -71,20 +71,47 @@ int main(int argc, char* argv[])
 
 	//Считаем количество элементов для суммирования в каждом потоке
 	int residue = arraySize % size;
-	int n = arraySize / size;
-	//Если есть остаток, то последние потоки берут на 1 элемент больше
-	if (residue > 0 && rank - residue < 0)
-	{
-		n++;
-	}
-	int* seriesPart = new int[n];
+	int n = arraySize / size;	
+	
+	int partSum;
+	if (rank == 0)
+	{		
+		for (int m = 1; m < size; m++)
+		{			
+			int amount = n;
+			//Если есть остаток, то последним потокам отправляется на 1 элемент больше
+			if (residue > 0 && m - residue < 0)
+			{
+				amount++;
+			}
+			int* seriesPart = new int[amount];
+			for (int i = 0; i < amount; i++)
+			{
+				seriesPart[i] = series[m*amount + i];
+			}
+			MPI_Send(seriesPart, amount, MPI_INT, m, m, MPI_COMM_WORLD);
+		}
 
-	//Каждый поток считает свою первую сумму
-	for (int i = 0; i < n; i++)
-	{
-		seriesPart[i] = series[rank*n + i];
+		int* seriesPart = new int[n];
+		for (int i = 0; i < n; i++)
+		{
+			seriesPart[i] = series[i];
+		}
+		partSum = accountSum(seriesPart, n);
 	}
-	int partSum = accountSum(seriesPart, n);
+	else
+	{
+		MPI_Status status;
+		//Если есть остаток, то последние потоки берут на 1 элемент больше
+		if (residue > 0 && rank - residue < 0)
+		{
+			n++;
+		}
+		int* seriesPart = new int[n];
+		MPI_Recv(seriesPart, n, MPI_INT, 0, rank, MPI_COMM_WORLD, &status);
+		partSum = accountSum(seriesPart, n);
+	}
+	
 
 	for (int j = 0; j < stepAmount; j++)
 	{
